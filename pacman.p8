@@ -2,6 +2,11 @@ pico-8 cartridge // http://www.pico-8.com
 version 29
 __lua__
 
+-- prototype settings
+fps = 30
+clone_delay = fps * 10 -- spawn new ghosts after 10 seconds
+-- prototype settings end
+
 _griddata = {
 "                            ",
 " ............  ............ ",
@@ -86,13 +91,17 @@ function ghost.new( x, y, name, speed)
   g.name     = name
   g.dir      = _left
   g.ap       = 0
+  g.playtime = 0
   g.freetime = 0 -- how long til release from cage
   g.freefood = 0 -- how many pellets til release from cage
   g.state    = ghost.states.chase
   g.sprite   = 3
   g.eyesspr  = 60
   
-  if g.name=="blinky" then
+  if g.name=="clone" then
+    g.colour   = rnd({8, 14, 12, 9})
+    g.state    = g.states.chase
+  elseif g.name=="blinky" then
     g.colour   = 8
     g.state    = g.states.chase
   elseif g.name=="pinky" then
@@ -151,7 +160,8 @@ end
 
 function ghost:frighten()
   
-  if self.state==ghost.states.chase or
+  if self.state==ghost.states.clone or
+     self.state==ghost.states.chase or
      self.state==ghost.states.scatter or
      self.state==ghost.states.fright then
     self.state = ghost.states.fright
@@ -299,12 +309,13 @@ function resetactors()
     eatanimframe = 0
   }
   
-  add( ghosts, ghost.new( 14*4, 12*4-2, "blinky", 0.6))
-  add( ghosts, ghost.new( 12*4, 15*4-2, "pinky", 0.6))
-  add( ghosts, ghost.new( 14*4, 15*4-2, "inky", 0.6))
-  add( ghosts, ghost.new( 16*4, 15*4-2, "clyde", 0.6))
+  --add( ghosts, ghost.new( 14*4, 12*4-2, "blinky", 0.6))
+  --add( ghosts, ghost.new( 12*4, 15*4-2, "pinky", 0.6))
+  --add( ghosts, ghost.new( 14*4, 15*4-2, "inky", 0.6))
+  --add( ghosts, ghost.new( 16*4, 15*4-2, "clyde", 0.6))
   
   newdir = pacman.dir
+  game.positions = {}
   game.playtime = 0
 end
 
@@ -454,6 +465,8 @@ function move_pacman()
       pacman.y += yoffset( pacman.dir)
       pacman.ap -= 1
       
+  add(game.positions, {pacman.x, pacman.y})
+
       if pacman.x<0 then
         pacman.x = 112+pacman.x
       elseif pacman.x>112 then
@@ -510,6 +523,18 @@ function move_ghost( g)
   
   local exits = gexits( g)
   
+  if g.name=="clone" then
+    if g.state==g.states.fright then
+      g.playtime -= 1
+      g.playtime = max(g.playtime, 1)
+    else
+      g.playtime += 1
+    end
+    local p = game.positions[g.playtime]
+    g.x, g.y = p[1], p[2]
+    return
+  end
+
   if #exits>0 and g.state==g.states.fright then
     del( exits, oppdir( g.dir))
     g.dir = exits[irnd(1,#exits)]
@@ -625,6 +650,10 @@ function _update()
   end
   
   game.playtime += 1
+
+  if game.playtime % clone_delay == 0 then
+      add( ghosts, ghost.new( 14*4, 24*4-2, "clone", 0.6))
+  end
   
   if timer.fright>0 then
     timer.fright -= game.speed
