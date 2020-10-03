@@ -4,7 +4,8 @@ __lua__
 
 -- prototype settings
 fps = 60
-clone_delay = fps * 5 -- spawn new ghosts after 10 seconds
+clone_delay = fps * 5 -- spawn new ghosts after 5 seconds
+pellet_life = fps * 30 -- pellets reappear after 30 seconds
 -- prototype settings end
 
 _griddata = {
@@ -69,6 +70,7 @@ function dot.new(x,y,super)
   d.x = x
   d.y = y
   d.super=super
+  d.ap = 0
   return d
 end
 
@@ -355,7 +357,9 @@ function _draw()
   end
   
   for d in all(pellets) do
-    if d.super then
+    if d.ap < 0 then
+      -- nothing
+    elseif d.super then
       rectfill(   d.x, d.y-1,   d.x, d.y+1, 10)
       rectfill( d.x-1,   d.y, d.x+1,   d.y, 10)
     else
@@ -397,8 +401,10 @@ end
 function eatpellet(x,y)
   for d in all(pellets) do
     if d.x==x and d.y==y then
-      del( pellets, d)
-      sfx(3+(#pellets)%2)
+      --del( pellets, d)
+      --sfx(3+(#pellets)%2)
+      d.ap = -pellet_life
+      sfx(rnd({3,4}))
       score += 10
       pacman.ap -= 0.1
       
@@ -465,8 +471,6 @@ function move_pacman()
       pacman.y += yoffset( pacman.dir)
       pacman.ap -= 1
       
-  add(game.positions, {pacman.x, pacman.y})
-
       if pacman.x<0 then
         pacman.x = 112+pacman.x
       elseif pacman.x>112 then
@@ -530,8 +534,9 @@ function move_ghost( g)
     else
       g.playtime += 1
     end
-    local p = game.positions[g.playtime]
-    g.x, g.y = p[1], p[2]
+    local d = game.positions[g.playtime]
+    if not d then p("error!"..(d)) end
+    g.x, g.y = d[1], d[2]
     return
   end
 
@@ -612,6 +617,9 @@ function update_ap()
   for g in all(ghosts) do
     g.ap += (g:speed()) * game.speed
   end
+  for d in all(pellets) do
+    d.ap += game.speed
+  end
 end
 
 function _update60()
@@ -649,6 +657,7 @@ function _update60()
     return
   end
   
+  game.positions[game.playtime] = {pacman.x, pacman.y}
   game.playtime += 1
 
   if game.playtime % clone_delay == 0 then
