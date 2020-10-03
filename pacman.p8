@@ -3,8 +3,8 @@ version 29
 __lua__
 
 -- prototype settings
-fps = 30
-clone_delay = fps * 10 -- spawn new ghosts after 10 seconds
+fps = 60
+clone_delay = fps * 5 -- spawn new ghosts after 10 seconds
 -- prototype settings end
 
 _griddata = {
@@ -50,7 +50,7 @@ states = { menu=1, intro=2,
            playing=3, dying=4,
            finish=5 }
 
-game    = { speed=1, level=1, state=1}
+game    = { speed=0.5, level=1, state=1}
 pellets = {}
 juncts  = {}
 pacman  = {}
@@ -301,7 +301,7 @@ function resetactors()
     x=14*4,
     y=24*4-2,
     ap=0, --action points
-    speed=0.8,
+    speed=0.625,
     dir=_left,
     eatanim = { 48, 49, 50, 51, 50, 49 },
     sprite = 48,
@@ -614,7 +614,7 @@ function update_ap()
   end
 end
 
-function _update()
+function _update60()
   
   if game.state==states.menu then
     if btn()>0 then
