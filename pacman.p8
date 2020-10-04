@@ -3,9 +3,11 @@ version 29
 __lua__
 
 -- prototype settings
+mode = 2 -- 1: spawn clones every 5 seconds
+         -- 2: spawn a clone each time we arrive on the same node
 fps = 60
 clone_delay = fps * 5 -- spawn new ghosts after 5 seconds
-pellet_life = fps * 30 -- pellets reappear after 30 seconds
+pellet_life = fps * 40 -- pellets reappear after 40 seconds
 -- prototype settings end
 
 _griddata = {
@@ -84,7 +86,7 @@ ghost.states = {
   caged=5
 }
 
-function ghost.new( x, y, name, speed)
+function ghost.new( x, y, name, speed, positions, playtime)
   local g = {}
   setmetatable( g, ghost)
   g.x        = x
@@ -93,12 +95,17 @@ function ghost.new( x, y, name, speed)
   g.name     = name
   g.dir      = _left
   g.ap       = 0
-  g.playtime = 0
+  g.playtime = playtime or 0
   g.freetime = 0 -- how long til release from cage
   g.freefood = 0 -- how many pellets til release from cage
   g.state    = ghost.states.chase
   g.sprite   = 3
   g.eyesspr  = 60
+  g.positions = positions -- predefined trajectory
+  if positions and playtime then
+    g.x = positions[playtime] % 256
+    g.y = positions[playtime] \ 256
+  end
   
   if g.name=="clone" then
     g.colour   = rnd({8, 14, 12, 9})
@@ -318,6 +325,7 @@ function resetactors()
   
   newdir = pacman.dir
   game.positions = {}
+  game.lut = {}
   game.playtime = 0
 end
 
@@ -534,9 +542,9 @@ function move_ghost( g)
     else
       g.playtime += 1
     end
-    local d = game.positions[g.playtime]
-    if not d then p("error!"..(d)) end
-    g.x, g.y = d[1], d[2]
+    local hash = g.positions[(g.playtime - 1) % #g.positions + 1]
+    if not hash then p("error!"..(hash)) end
+    g.x, g.y = hash%256, hash\256
     return
   end
 
@@ -656,12 +664,25 @@ function _update60()
   if game.state~=states.playing then
     return
   end
-  
-  game.positions[game.playtime] = {pacman.x, pacman.y}
+
+  local hash = pacman.y \ 1 * 256 + pacman.x \ 1
+  game.positions[game.playtime] = hash
   game.playtime += 1
 
-  if game.playtime % clone_delay == 0 then
-      add( ghosts, ghost.new( 14*4, 24*4-2, "clone", 0.6))
+  if mode == 1 then
+    if game.playtime % clone_delay == 0 then
+      local pos = pack(unpack(game.positions))
+      add( ghosts, ghost.new( 14*4, 24*4-2, "clone", 0.6, pos))
+    end
+  elseif mode == 2 then
+    if game.lut[hash] then
+      local midtime = (game.playtime - game.lut[hash]) \ 2
+      if game.lut[hash] + 2 * fps < game.playtime and game.positions[midtime] != hash then
+        local pos = pack(unpack(game.positions, game.lut[hash], game.playtime))
+        add( ghosts, ghost.new( 14*4, 24*4-2, "clone", 0.6, pos, midtime))
+      end
+    end
+    if not game.lut[hash] then game.lut[hash] = game.playtime end
   end
   
   if timer.fright>0 then
