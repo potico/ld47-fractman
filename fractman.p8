@@ -33,10 +33,10 @@ end
 -- cell width: steps of 2^n/8 for 0..7 then just 1 for 8..15
 dx = { [0]=2, 1.83, 1.68, 1.54, 1.41, 1.30, 1.19, 1.09, 1, 1, 1, 1, 1, 1, 1, 1 }
 for i=0,15 do dx[31-i]=dx[i] end
-dx[32] = 2
+dx[32] = 2.18 dx[33] = 2.38
 -- sum of cell widths
 sdx = { [-1]=-dx[0], [0]=0 }
-for i=0,31 do
+for i=0,32 do
   dx[i] /= 20.05
   sdx[i+1] = sdx[i] + dx[i]
 end
@@ -73,7 +73,8 @@ function _init()
   {
     -- z is 0..3
     x=15,y=4,cx=15,cy=4,z=1,
-    dir=1,wantdir=1,move=0
+    dir=1,wantdir=1,move=0,
+    score=0,
   }
 
   layers = {}
@@ -82,7 +83,7 @@ function _init()
   end
 end
 
-function cango(dir)
+function can_go(dir)
   local cx,cy = p.cx,p.cy
   if dir==0 then cx-=1 end
   if dir==1 then cx+=1 end
@@ -95,10 +96,8 @@ function _update()
   for i=0,3 do if (btn(i)) p.wantdir=i end
 
   if p.move == 0 then
-    if cango(p.wantdir) then
-      p.dir = p.wantdir
-    end
-    local b, cx, cy = cango(p.dir)
+    if can_go(p.wantdir) then p.dir = p.wantdir end
+    local b, cx, cy = can_go(p.dir)
     if b then
       p.wantcx, p.wantcy = cx, cy
     end
@@ -115,11 +114,11 @@ function _update()
 
   -- handle teleports
   local tx, ty = 0, 0
-  if p.y < 0 or p.y == 32 then
+  if p.y < 0 or p.y > 31 then
     tx = ({[9]=4, [22]=-4})[p.cx]
     ty = p.y < 0 and 8 or -8
     p.z = prev_layer(p.z)
-  elseif p.x < 0 or p.x == 32 then
+  elseif p.x < 0 or p.x > 31 then
     tx = p.x < 0 and 8 or -8
     ty = ({[7]=5, [24]=-5})[p.cy]
     p.z = prev_layer(p.z)
@@ -133,38 +132,43 @@ function _update()
     end
     p.z = next_layer(p.z)
   end
-  p.cy += ty p.wantcy += ty p.y += ty
   p.cx += tx p.wantcx += tx p.x += tx
+  p.cy += ty p.wantcy += ty p.y += ty
 end
 
 function _draw()
   cls()
 
-  local zx = expz(min(p.x, 31-p.x))*1.8
-  local zy = expz(min(p.y, 31-p.y))*1.8
-  local off = 15
-  if p.x > p.y then
-    local mz = 1 - zy
-    local dz = offset(p.x) - offset(p.y)
-    draw_layer(prev_layer(p.z), 160*mz - 160*dz*zy*8/20.05 + off, 160*mz + off, 160*zy)
-  else
-    local mz = 1 - zx
-    local dz = offset(p.y) - offset(p.x)
-    draw_layer(prev_layer(p.z), 160*mz + off, 160*mz - 160*dz*zx*8/20.05 + off, 160*zx)
-  end
+  -- compute the zoom level we want
+  local offx = min(p.x, 31 - p.x)
+  local offy = min(p.y, 31 - p.y)
+  local zx = expz(offx)*1.8
+  local zy = expz(offy)*1.8
+  local zmin = offx > offy and zy or zx
 
-  if p.move > 0.5 then
-    spr(51,60,60)
-  else
-    spr(52+p.dir,60,60)
-  end
+  local halfsize = 160
+  local hw = halfsize * zmin
 
+  local scale = 8 / 20.05 -- next layer
+  local x = 64 - hw - (offset(p.x+0.5) - offset(16)) * hw * scale
+  local y = 64 - hw - (offset(p.y+0.5) - offset(16)) * hw * scale
+
+  draw_layer(prev_layer(p.z), x, y, hw)
+
+  spr(52 + (p.move > 0.5 and -1 or p.dir), 60, 60)
+
+  local ss = '00000'..(p.score * 2)..'0'
+  print(sub(ss,#ss-5,#ss), 100, 4, 7)
+
+--[[
   print(p.x,2,2,9)
   print(p.y,2,8,9)
   print(p.z,2,14,9)
 
   print(zx,2,24,10)
   print(zy,2,30,10)
+  print(hw,2,36,10)
+--]]
 end
 
 function draw_layer(n, x0,y0,w, depth)
@@ -196,6 +200,7 @@ function draw_layer(n, x0,y0,w, depth)
       -- collision!
       if n == p.z and d.x == p.cx and d.y == p.cy then
         d.alive = false
+        p.score += 1
       end
       local sx = w*dx[d.x]
       local sy = w*dx[d.y]
