@@ -33,8 +33,9 @@ end
 -- cell width: steps of 2^n/8 for 0..7 then just 1 for 8..15
 dx = { [0]=2, 1.83, 1.68, 1.54, 1.41, 1.30, 1.19, 1.09, 1, 1, 1, 1, 1, 1, 1, 1 }
 for i=0,15 do dx[31-i]=dx[i] end
+dx[32] = 2
 -- sum of cell widths
-sdx = { [0]=0 }
+sdx = { [-1]=-dx[0], [0]=0 }
 for i=0,31 do
   dx[i] /= 20.05
   sdx[i+1] = sdx[i] + dx[i]
@@ -67,11 +68,12 @@ function init_layer()
 end
 
 function _init()
+  music(1)
   p =
   {
     -- z is 0..3
-    x=1,y=1,cx=1,cy=1,z=1,
-    dir=-1,wantdir=-1,move=0
+    x=15,y=4,cx=15,cy=4,z=1,
+    dir=1,wantdir=1,move=0
   }
 
   layers = {}
@@ -92,7 +94,7 @@ end
 function _update()
   for i=0,3 do if (btn(i)) p.wantdir=i end
 
-  if p.move%1 == 0 then
+  if p.move == 0 then
     if cango(p.wantdir) then
       p.dir = p.wantdir
     end
@@ -102,13 +104,37 @@ function _update()
     end
   end
 
-  p.move += 0.125
-  p.x = p.cx + p.move * (p.wantcx - p.cx)
-  p.y = p.cy + p.move * (p.wantcy - p.cy)
+  p.move += 0.25
   if p.move == 1 then
     p.cx,p.cy = p.wantcx,p.wantcy
     p.move = 0
   end
+
+  p.x = p.cx + p.move * (p.wantcx - p.cx)
+  p.y = p.cy + p.move * (p.wantcy - p.cy)
+
+  -- handle teleports
+  local tx, ty = 0, 0
+  if p.y < 0 or p.y == 32 then
+    tx = ({[9]=4, [22]=-4})[p.cx]
+    ty = p.y < 0 and 8 or -8
+    p.z = prev_layer(p.z)
+  elseif p.x < 0 or p.x == 32 then
+    tx = p.x < 0 and 8 or -8
+    ty = ({[7]=5, [24]=-5})[p.cy]
+    p.z = prev_layer(p.z)
+  elseif p.x >= 8 and p.x < 24 and p.y >= 8 and p.y < 24 then
+    if p.x == 8 or p.x > 23 then
+      tx = p.x == 8 and -8 or 8
+      ty = ({[12]=-5, [19]=5})[p.cy]
+    else
+      tx = ({[13]=-4, [18]=4})[p.cx]
+      ty = p.y == 8 and -8 or 8
+    end
+    p.z = next_layer(p.z)
+  end
+  p.cy += ty p.wantcy += ty p.y += ty
+  p.cx += tx p.wantcx += tx p.x += tx
 end
 
 function _draw()
@@ -132,6 +158,13 @@ function _draw()
   else
     spr(52+p.dir,60,60)
   end
+
+  print(p.x,2,2,9)
+  print(p.y,2,8,9)
+  print(p.z,2,14,9)
+
+  print(zx,2,24,10)
+  print(zy,2,30,10)
 end
 
 function draw_layer(n, x0,y0,w, depth)
@@ -159,10 +192,16 @@ function draw_layer(n, x0,y0,w, depth)
 
   -- draw pellets
   foreach(layers[n].dots, function(d)
-    local sx = w*dx[d.x]
-    local sy = w*dx[d.y]
-    local x,y = w * sdx[d.x], w * sdx[d.y]
-    rectfill(x+sx*9/20,y+sy*9/20,x+sx*11/20,y+sy*11/20,6)
+    if d.alive then
+      -- collision!
+      if n == p.z and d.x == p.cx and d.y == p.cy then
+        d.alive = false
+      end
+      local sx = w*dx[d.x]
+      local sy = w*dx[d.y]
+      local x,y = w * sdx[d.x], w * sdx[d.y]
+      rectfill(x+sx*9/20,y+sy*9/20,x+sx*11/20,y+sy*11/20,6)
+    end
   end)
 
   if depth >= 2 then
