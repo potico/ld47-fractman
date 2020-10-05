@@ -2,6 +2,9 @@ pico-8 cartridge // http://www.pico-8.com
 version 29
 __lua__
 
+-- number of Z layers
+zlayers = 4
+
 --[[
 
       +-----------------+
@@ -29,125 +32,145 @@ end
 
 -- cell width: steps of 2^n/8 for 0..7 then just 1 for 8..15
 dx = { [0]=2, 1.83, 1.68, 1.54, 1.41, 1.30, 1.19, 1.09, 1, 1, 1, 1, 1, 1, 1, 1 }
+for i=0,15 do dx[31-i]=dx[i] end
 -- sum of cell widths
-sdx = {}
-for i=0,15 do
+sdx = { [0]=0 }
+for i=0,31 do
   dx[i] /= 20.05
-  sdx[i] = (sdx[i-1] or 0) + dx[i]
+  sdx[i+1] = sdx[i] + dx[i]
+end
+
+function offset(x) -- x: 0..32
+  return sdx[x\1]+x%1*dx[x\1+1]
+end
+
+function prev_layer(n) return (n - 2) % zlayers + 1 end
+
+function next_layer(n) return n % zlayers + 1 end
+
+function init_layer()
+  dots, walls = {}, {}
+  for j=0,31 do
+    for i=0,31 do
+      if max(abs(15.5-i),abs(15.5-j))>8 then -- ignore inner layer
+        local s = mget(i,j)
+        if s==1 or s==2 then
+          add(dots,{x=i,y=j,spr=s,alive=true})
+        elseif s>2 then
+          add(walls,{x=i,y=j})
+        end
+      end
+    end
+  end
+  layer = { dots=dots, walls=walls }
+  return layer
 end
 
 function _init()
   p =
   {
     -- z is 0..3
-    x=1,y=1,z=1
+    x=1,y=1,cx=1,cy=1,z=1,
+    dir=-1,wantdir=-1,move=0
   }
+
+  layers = {}
+  for i=1,zlayers do
+    layers[i] = init_layer()
+  end
+end
+
+function cango(dir)
+  local cx,cy = p.cx,p.cy
+  if dir==0 then cx-=1 end
+  if dir==1 then cx+=1 end
+  if dir==2 then cy-=1 end
+  if dir==3 then cy+=1 end
+  return mget(cx,cy) <= 2, cx, cy
 end
 
 function _update()
-  if btnp(0) then p.x-=1 end
-  if btnp(1) then p.x+=1 end
-  if btnp(2) then p.y-=1 end
-  if btnp(3) then p.y+=1 end
+  for i=0,3 do if (btn(i)) p.wantdir=i end
 
-if p.x>8 and p.y > 8 then
-  p.x -= 8
-  p.y -= 8
-end
+  if p.move%1 == 0 then
+    if cango(p.wantdir) then
+      p.dir = p.wantdir
+    end
+    local b, cx, cy = cango(p.dir)
+    if b then
+      p.wantcx, p.wantcy = cx, cy
+    end
+  end
 
-alpha = 20.05/8
---  while test >= alpha do test /= alpha end
+  p.move += 0.125
+  p.x = p.cx + p.move * (p.wantcx - p.cx)
+  p.y = p.cy + p.move * (p.wantcy - p.cy)
+  if p.move == 1 then
+    p.cx,p.cy = p.wantcx,p.wantcy
+    p.move = 0
+  end
 end
 
 function _draw()
   cls()
 
---  zx = expz(p.x+4.4)
---  zy = expz(p.y+4.4)
-  zx = expz(p.x)*1.6645
-  zy = expz(p.y)*1.6645
+  local zx = expz(min(p.x, 31-p.x))*1.8
+  local zy = expz(min(p.y, 31-p.y))*1.8
+  local off = 15
   if p.x > p.y then
     local mz = 1 - zy
-    local dz = sdx[p.x] - sdx[p.y]
-    draw_map(160*mz - 160*dz*zy*8/20.05, 160*mz, 160*zy)
+    local dz = offset(p.x) - offset(p.y)
+    draw_layer(prev_layer(p.z), 160*mz - 160*dz*zy*8/20.05 + off, 160*mz + off, 160*zy)
   else
     local mz = 1 - zx
-    local dz = sdx[p.y] - sdx[p.x]
-    draw_map(160*mz, 160*mz - 160*dz*zx*8/20.05, 160*zx)
+    local dz = offset(p.y) - offset(p.x)
+    draw_layer(prev_layer(p.z), 160*mz + off, 160*mz - 160*dz*zx*8/20.05 + off, 160*zx)
   end
 
-  spr(52,60,60)
-
-print('x='..p.x, 103, 5, 14)
-print('y='..p.y, 103, 12, 14)
-print('zx='..zx, 83, 18, 10)
-print('zy='..zy, 83, 24, 10)
---line(0,64,128,64,9)
+  if p.move > 0.5 then
+    spr(51,60,60)
+  else
+    spr(52+p.dir,60,60)
+  end
 end
 
-function draw_map(x0,y0,w, depth)
+function draw_layer(n, x0,y0,w, depth)
   depth = depth or 0
---x0*=1.5 x0-=40
---y0*=1.5 y0-=40
---w*=1.5
   camera(-x0, -y0)
+
   -- draw background
   fillp(0x5a5a.8)
-  for j=0,15 do
-    for i=0,15 do
-      if mget(i,j)>2 then
-        if i<8 or j<8 then
-          local sx = w * dx[i] * 0.5
-          local sy = w * dx[j] * 0.5
-          local x, y = w * sdx[i], w * sdx[j]
---size=w
-          rectfill(x-sx,y-sy,x+sx+1,y+sy+1,12)
-          --rect(x-sx,y-sy,x+sx+1,y+sy+1,10)
-        end
-      end
-    end
-  end
+  foreach(layers[n].walls, function(d)
+    local sx = w*dx[d.x]
+    local sy = w*dx[d.y]
+    local x,y = w * sdx[d.x], w * sdx[d.y]
+    rectfill(x,y,x+sx+1,y+sy+1,12)
+--    rect(x,y,x+sx,y+sy,10)
+  end)
   fillp()
+
   -- draw empty space
-  for j=0,15 do
-    for i=0,15 do
-      if i<8 or j<8 then
-        if mget(i,j)<=2 then
-          local sx = w * dx[i] * 0.5
-          local sy = w * dx[j] * 0.5
-          local x, y = w * sdx[i], w * sdx[j]
-          rectfill(x-sx,y-sy,x+sx,y+sy,0)
-          --rect(x-size*.75,y-size*.75,x+size*.75,y+size*.75,3)
-        end
-      end
-    end
-  end
+  foreach(layers[n].dots, function(d)
+    local sx = w*dx[d.x]
+    local sy = w*dx[d.y]
+    local x,y = w * sdx[d.x], w * sdx[d.y]
+    rectfill(x,y,x+sx,y+sy,0)
+  end)
+
   -- draw pellets
-  for j=0,15 do
-    for i=0,15 do
-      if i<8 or j<8 then
-        if mget(i,j)<=2 then
-          --local size=w*(1-min(i,j)/16)
-          local sx = w * dx[i] * 0.5
-          local sy = w * dx[j] * 0.5
-          local x, y = w * sdx[i], w * sdx[j]
-          --circfill(x,y,size/6,7)
-if i == 5 then
-print(j,x-sx/10,y-sy/10,7)
-else
-          rectfill(x-sx/10,y-sy/10,x+sx/10,y+sy/10,6)
-end
-        end
-      end
-    end
-  end
+  foreach(layers[n].dots, function(d)
+    local sx = w*dx[d.x]
+    local sy = w*dx[d.y]
+    local x,y = w * sdx[d.x], w * sdx[d.y]
+    rectfill(x+sx*9/20,y+sy*9/20,x+sx*11/20,y+sy*11/20,6)
+  end)
 
   if depth >= 2 then
     camera()
     return
   end
   local d = 12.05 * w / 20.05
-  draw_map(x0 + d, y0 + d, w * 8 / 20.05, depth + 1)
+  draw_layer(next_layer(n), x0 + w * sdx[8], y0 + w * sdx[8], w - d, depth + 1)
 end
 
 __gfx__
@@ -175,14 +198,14 @@ __gfx__
 00c000cc00c0000000000c00cc000c00000000cccccccccccccccccccc000000cc0000cc00c000cccccccccccc000c0000000000000000000000000000000000
 00c00c0000c0000000000c0000c00c0000000c00000000000000000000c0000000c00c0000c00c000000000000c00c0000000000000000000000000000000000
 00c00c0000c0000000000c0000c00c0000000c00000000000000000000c0000000c00c0000c00c000000000000c00c0000000000000000000000000000000000
-88888888cccccccc000000000000000000aaaa000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-88888888cccccccc00000000000000000aaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-88888888cccccccc0000000000000000aaaaaa000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-88888888cccccccc0000000000000000aaaaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-88888888cccccccc0000000000000000aaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-88888888cccccccc0000000000000000aaaaa0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-88888888cccccccc00000000000000000aaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-88888888cccccccc000000000000000000aaaa000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+88888888cccccccc0000000000aaaa0000aaaa0000aaaa000000000000aaaa000000000000000000000000000000000000000000000000000000000000000000
+88888888cccccccc000000000aaaaaa00aaaaaa00aaaaaa00a0000a00aaaaaa00000000000000000000000000000000000000000000000000000000000000000
+88888888cccccccc00000000aaaaaaaa00aaaaaaaaaaaa00aaa000aaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
+88888888cccccccc00000000aaaaaaaa000aaaaaaaaaa000aaaa0aaaaaaaaaaa0000000000000000000000000000000000000000000000000000000000000000
+88888888cccccccc00000000aaaaaaaa0000aaaaaaaa0000aaaaaaaaaaaa0aaa0000000000000000000000000000000000000000000000000000000000000000
+88888888cccccccc00000000aaaaaaaa000aaaaaaaaaa000aaaaaaaaaaa000aa0000000000000000000000000000000000000000000000000000000000000000
+88888888cccccccc000000000aaaaaa00aaaaaa00aaaaaa00aaaaaa00a0000a00000000000000000000000000000000000000000000000000000000000000000
+88888888cccccccc0000000000aaaa0000aaaa0000aaaa0000aaaa00000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 0916161616161616161202111616161616161616110212161616161616161609000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 1702020102020202020202020202020202020202020202020202020201020217000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
