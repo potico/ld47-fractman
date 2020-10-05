@@ -2,10 +2,34 @@ pico-8 cartridge // http://www.pico-8.com
 version 29
 __lua__
 
-dx = {
-  [0]=2, 1.83, 1.68, 1.54, 1.41, 1.30, 1.19, 1.09,
-  1, 1, 1, 1, 1, 1, 1, 1
-}
+--[[
+
+      +-----------------+
+      |     16x16       |
+      |   map chunk     |
+      |   with size     | 12.05
+      |   correction    |
+      |                 |
+20.05 |         +-------+
+      |         |
+      |         |
+      |         | 8
+      |         |
+      +---------+
+
+]]--
+
+-- steps of (20.05/8)^n/8 for the zoom level
+expt = { [0]=1, 1.1248, 1.2652, 1.4231, 1.6008, 1.8006, 2.0253, 2.2781, 2.5625, }
+function expz(x)
+  local n=x%8
+  local t=n%1
+  return (1-t)*expt[n\1]+t*expt[n\1+1]
+end
+
+-- cell width: steps of 2^n/8 for 0..7 then just 1 for 8..15
+dx = { [0]=2, 1.83, 1.68, 1.54, 1.41, 1.30, 1.19, 1.09, 1, 1, 1, 1, 1, 1, 1, 1 }
+-- sum of cell widths
 sdx = {}
 for i=0,15 do
   dx[i] /= 20.05
@@ -13,36 +37,56 @@ for i=0,15 do
 end
 
 function _init()
-  ply =
+  p =
   {
     -- z is 0..3
-    x=4,y=5,z=1
+    x=1,y=1,z=1
   }
-  test = 1
 end
 
 function _update()
-  if btn(0) then ply.x-=1 end
-  if btn(1) then ply.x+=1 end
-  if btn(2) then ply.y-=1 end
-  if btn(3) then ply.y+=1 end
-  test *= 1.01
+  if btnp(0) then p.x-=1 end
+  if btnp(1) then p.x+=1 end
+  if btnp(2) then p.y-=1 end
+  if btnp(3) then p.y+=1 end
+
+if p.x>8 and p.y > 8 then
+  p.x -= 8
+  p.y -= 8
+end
+
 alpha = 20.05/8
-  while test >= alpha do test /= alpha end
+--  while test >= alpha do test /= alpha end
 end
 
 function _draw()
   cls()
-  local delta = 160-160*test
-  draw_map(delta, delta, 160*test)
-  --draw_map(64+delta/2,64+delta/2,4*test)
-  --draw_map(96+delta/4,96+delta/4,2*test)
-  --draw_map(112+delta/8,112+delta/8,1*test)
-  --draw_map(120+delta/16,120+delta/16,test/2)
-  spr(52,46,20)
+
+--  zx = expz(p.x+4.4)
+--  zy = expz(p.y+4.4)
+  zx = expz(p.x)*1.6645
+  zy = expz(p.y)*1.6645
+  if p.x > p.y then
+    local mz = 1 - zy
+    local dz = sdx[p.x] - sdx[p.y]
+    draw_map(160*mz - 160*dz*zy*8/20.05, 160*mz, 160*zy)
+  else
+    local mz = 1 - zx
+    local dz = sdx[p.y] - sdx[p.x]
+    draw_map(160*mz, 160*mz - 160*dz*zx*8/20.05, 160*zx)
+  end
+
+  spr(52,60,60)
+
+print('x='..p.x, 103, 5, 14)
+print('y='..p.y, 103, 12, 14)
+print('zx='..zx, 83, 18, 10)
+print('zy='..zy, 83, 24, 10)
+--line(0,64,128,64,9)
 end
 
 function draw_map(x0,y0,w, depth)
+  depth = depth or 0
 --x0*=1.5 x0-=40
 --y0*=1.5 y0-=40
 --w*=1.5
@@ -88,19 +132,22 @@ function draw_map(x0,y0,w, depth)
           local sy = w * dx[j] * 0.5
           local x, y = w * sdx[i], w * sdx[j]
           --circfill(x,y,size/6,7)
-          rectfill(x-sx/10,y-sy/10,x+sx/10,y+sy/10,7)
+if i == 5 then
+print(j,x-sx/10,y-sy/10,7)
+else
+          rectfill(x-sx/10,y-sy/10,x+sx/10,y+sy/10,6)
+end
         end
       end
     end
   end
 
-  depth = (depth or 0) + 1
-  if depth >= 3 then
+  if depth >= 2 then
     camera()
     return
   end
   local d = 12.05 * w / 20.05
-  draw_map(x0 + d, y0 + d, w * 8 / 20.05, depth)
+  draw_map(x0 + d, y0 + d, w * 8 / 20.05, depth + 1)
 end
 
 __gfx__
